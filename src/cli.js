@@ -25,7 +25,7 @@ import {
   generateFinalOutput,
   generateRedOutput
 } from './engine.js';
-import { ensureRunDir, readRoleOutput, waitForRoleOutputs, writeRoleOutput } from './run-state.js';
+import { ensureRunDir, waitForRoleOutputs, writeRoleOutput } from './run-state.js';
 
 const color = {
   reset: '\u001b[0m', dim: '\u001b[2m', bold: '\u001b[1m', cyan: '\u001b[36m', blue: '\u001b[34m', yellow: '\u001b[33m', red: '\u001b[31m', green: '\u001b[32m', magenta: '\u001b[35m'
@@ -62,7 +62,7 @@ function parseArgs(argv) {
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
     if (arg.startsWith('/')) continue;
-    if (['login', 'providers', 'logout', 'use', 'assign', 'unassign', 'mode'].includes(arg) && !command) {
+    if (['login', 'providers', 'logout', 'use', 'assign', 'unassign', 'mode', 'run'].includes(arg) && !command) {
       command = arg;
     } else if (arg === '--role') { role = args[index + 1] ?? null; index += 1;
     } else if (arg === '--assign-role') { assignRole = args[index + 1] ?? null; index += 1;
@@ -169,6 +169,7 @@ function printModeGuide() {
   console.log('- /unassign <role>      : 역할별 provider 할당을 제거합니다.');
   console.log('- /logout <provider>    : provider 연결을 제거합니다.');
   console.log('- /tmux <prompt>        : tmux 실분할 데모를 실행합니다.');
+  console.log('- /run <prompt>         : 단일 명령으로 실제 서비스 실행을 시작합니다.');
   console.log('');
   console.log('역할 목록: architect, red, blue, consensus, final');
 }
@@ -181,10 +182,12 @@ function printHelp() {
   console.log('  multiverse-sec assign --assign-role architect|red|blue|consensus|final --provider openai|claude|gemini');
   console.log('  multiverse-sec unassign --assign-role architect|red|blue|consensus|final');
   console.log('  multiverse-sec logout --provider openai|claude|gemini');
+  console.log('  multiverse-sec run "요청 내용"');
   console.log('  multiverse-sec --tmux "요청 내용" [--session-name 이름] [--no-delay]');
   console.log('  multiverse-sec /mode');
   console.log('  multiverse-sec /login [provider]');
   console.log('  multiverse-sec /assign <role> <provider>');
+  console.log('  multiverse-sec /run "요청 내용"');
   console.log('');
   console.log('옵션:');
   console.log('  --tmux         실제 tmux pane 분할 데모를 실행합니다.');
@@ -194,6 +197,61 @@ function printHelp() {
   console.log('  --api-key      비대화형 login에 사용할 API 키를 전달합니다.');
   console.log('  --assign-role  역할별 provider 할당 시 역할을 지정합니다.');
   console.log('  --no-delay     패널 출력 지연을 제거합니다.');
+}
+
+
+async function runSequentialService(prompt, noDelay) {
+  const providersByRole = {
+    architect: roleProvider('architect'),
+    red: roleProvider('red'),
+    blue: roleProvider('blue'),
+    consensus: roleProvider('consensus'),
+    final: roleProvider('final')
+  };
+
+  console.log(paint('Multiverse Secure Service Run', 'magenta'));
+  console.log(paint(`Prompt: ${prompt}`, 'dim'));
+  console.log(paint(`Provider map: architect=${providerLabel(providersByRole.architect)}, red=${providerLabel(providersByRole.red)}, blue=${providerLabel(providersByRole.blue)}, consensus=${providerLabel(providersByRole.consensus)}, final=${providerLabel(providersByRole.final)}`, 'dim'));
+  console.log();
+
+  const architect = await generateArchitectOutput(providersByRole.architect, prompt);
+  console.log(paint('[Architect]', 'cyan'), architect.idea);
+  console.log(`- detail: ${architect.detail}`);
+  console.log(`- deliverable: ${architect.deliverable}`);
+  await maybePause(noDelay, 120);
+
+  const red = await generateRedOutput(providersByRole.red, prompt, architect);
+  console.log();
+  console.log(paint('[Red Team]', 'red'), red.idea);
+  console.log(`- detail: ${red.detail}`);
+  console.log(`- challenge: ${red.challenge}`);
+  await maybePause(noDelay, 120);
+
+  const blue = await generateBlueOutput(providersByRole.blue, prompt, architect, red);
+  console.log();
+  console.log(paint('[Blue Team]', 'blue'), blue.idea);
+  console.log(`- detail: ${blue.detail}`);
+  console.log(`- response: ${blue.response}`);
+  await maybePause(noDelay, 120);
+
+  const consensus = await generateConsensusOutput(providersByRole.consensus, prompt, architect, red, blue);
+  console.log();
+  console.log(paint('[Consensus]', 'yellow'), consensus.winner);
+  console.log(`- summary: ${consensus.summary}`);
+  for (const turn of consensus.turns) {
+    console.log(`  · ${turn.from} → ${turn.to}: ${turn.message}`);
+  }
+  await maybePause(noDelay, 120);
+
+  const final = await generateFinalOutput(providersByRole.final, prompt, architect, red, blue, consensus);
+  console.log();
+  console.log(paint('[Final]', 'green'), final.winner);
+  console.log(`- summary: ${final.summary}`);
+  for (const reason of final.reasons) {
+    console.log(`  ✓ ${reason}`);
+  }
+  console.log('--- final-code.js ---');
+  console.log(final.finalCode);
 }
 
 function printProviders() {
@@ -330,13 +388,10 @@ export async function runCli(argv = process.argv) {
     launchTmuxDashboard({ sessionName, prompt: decodedPrompt, noDelay, noAttach });
     return 0;
   }
-  console.log(paint('Multiverse Secure Demo', 'magenta'));
-  console.log(paint('실제 엔진이 연결된 tmux 멀티 에이전트 실행기', 'bold'));
-  console.log(paint(`기본 Provider: ${providerLabel(effectiveProvider)}`, 'dim'));
-  console.log(paint(`Prompt: ${decodedPrompt}`, 'dim'));
-  console.log();
-  console.log(paint('실제 실행은 /tmux 또는 --tmux 로 시작하세요.', 'yellow'));
-  console.log(paint(`예시: multiverse-sec /tmux "${decodedPrompt}"`, 'dim'));
+  if (!command || command === 'run') {
+    await runSequentialService(decodedPrompt, noDelay);
+    return 0;
+  }
   return 0;
 }
 
