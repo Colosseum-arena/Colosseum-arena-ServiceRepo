@@ -54,10 +54,12 @@ let result = run(['--help']);
 assert.equal(result.status, 0, result.stderr);
 assert.match(result.stdout, /agents/);
 assert.match(result.stdout, /--dry-run/);
+assert.match(result.stdout, /tui/);
 
 result = run(['/mode']);
 assert.equal(result.status, 0, result.stderr);
 assert.match(result.stdout, /alpha, beta, gamma/);
+assert.match(result.stdout, /\/tui/);
 
 result = run(['login', '--provider', 'codex', '--api-key', 'test-codex-key'], 'Y\n');
 assert.equal(result.status, 0, result.stderr);

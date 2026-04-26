@@ -24,6 +24,7 @@ import {
 } from './auth.js';
 import { orchestrateWorkspacePatch } from './engine.js';
 import { RunTui } from './tui.js';
+import { DashboardTui } from './dashboard-tui.js';
 import { buildWorkspaceSnapshot, applyWorkspaceChanges, describeWorkspacePath } from './workspace.js';
 import { getDefaultModel } from './providers.js';
 
@@ -71,7 +72,9 @@ function normalizeSlashCommand(command) {
     '/unmodel': 'unmodel',
     '/logout': 'logout',
     '/cleanup': 'cleanup',
-    '/run': 'run'
+    '/run': 'run',
+    '/tui': 'tui',
+    '/dashboard': 'tui'
   };
   return aliases[command] ?? command;
 }
@@ -107,7 +110,7 @@ function parseArgs(argv) {
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
     if (arg.startsWith('/')) continue;
-    if (['login', 'providers', 'agents', 'logout', 'use', 'assign', 'unassign', 'model', 'unmodel', 'cleanup', 'mode', 'run'].includes(arg) && !command) {
+    if (['login', 'providers', 'agents', 'logout', 'use', 'assign', 'unassign', 'model', 'unmodel', 'cleanup', 'mode', 'run', 'tui', 'dashboard'].includes(arg) && !command) {
       command = arg;
     } else if (arg === '--provider') {
       provider = args[index + 1] ?? null;
@@ -165,6 +168,7 @@ function printModeGuide() {
   console.log('- /assign <agent> <provider>: 에이전트별 provider를 지정합니다.');
   console.log('- /model <agent> <model>    : 에이전트별 모델을 지정합니다.');
   console.log('- /cleanup                  : 예전 tmux 분할 세션을 전부 정리합니다.');
+  console.log('- /tui                      : 통합 대시보드 TUI를 실행합니다.');
   console.log('- /run "요청 내용"          : 현재 폴더에 기능을 반영합니다.');
   console.log('');
   console.log('에이전트 목록: alpha, beta, gamma');
@@ -182,10 +186,12 @@ function printHelp() {
   console.log('  multiverse-sec unmodel --agent alpha|beta|gamma');
   console.log('  multiverse-sec logout --provider codex|claude|gemini');
   console.log('  multiverse-sec cleanup');
+  console.log('  multiverse-sec tui');
   console.log('  multiverse-sec run "로그인 기능 추가해줘" [--dry-run] [--plain]');
   console.log('  multiverse-sec /assign alpha codex');
   console.log('  multiverse-sec /model beta claude-sonnet-4-5');
   console.log('  multiverse-sec /cleanup');
+  console.log('  multiverse-sec /tui');
   console.log('  multiverse-sec /run "로그인 기능 추가해줘"');
 }
 
@@ -401,6 +407,11 @@ async function runOrchestration(prompt, dryRun, plain = false) {
   printRunSummary(result, dryRun, changedFiles, agentConfigs);
 }
 
+async function runDashboard() {
+  const dashboard = new DashboardTui({ cwd: process.cwd() });
+  await dashboard.start();
+}
+
 export async function runCli(argv = process.argv) {
   const { help, dryRun, plain, prompt, provider, apiKey, command, agent, model } = parseArgs(argv);
   if (help) {
@@ -450,6 +461,15 @@ export async function runCli(argv = process.argv) {
   }
   if (command === 'cleanup') {
     runCleanup();
+    return 0;
+  }
+  if (command === 'tui' || command === 'dashboard') {
+    await runDashboard();
+    return 0;
+  }
+
+  if (!command && !prompt && process.stdout.isTTY) {
+    await runDashboard();
     return 0;
   }
 
