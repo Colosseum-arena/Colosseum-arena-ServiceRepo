@@ -6,12 +6,30 @@ import readline from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
 
 export const PROVIDERS = [
-  { id: 'openai', label: 'OpenAI', credentialLabel: 'OpenAI API Key' },
+  { id: 'codex', label: 'Codex', credentialLabel: 'Codex / OpenAI API Key' },
   { id: 'claude', label: 'Claude', credentialLabel: 'Claude API Key' },
   { id: 'gemini', label: 'Gemini', credentialLabel: 'Gemini API Key' }
 ];
 
-export const AGENT_ROLES = ['architect', 'red', 'blue', 'consensus', 'final'];
+export const IMPLEMENTATION_AGENTS = ['alpha', 'beta', 'gamma'];
+
+export const AGENT_META = {
+  alpha: { label: 'Agent Alpha', strategy: '요청과 코드베이스를 보고 자율적으로 구현 전략 수립' },
+  beta: { label: 'Agent Beta', strategy: '요청과 코드베이스를 보고 자율적으로 구현 전략 수립' },
+  gamma: { label: 'Agent Gamma', strategy: '요청과 코드베이스를 보고 자율적으로 구현 전략 수립' }
+};
+
+const DEFAULT_AGENT_PROVIDER = {
+  alpha: 'codex',
+  beta: 'claude',
+  gamma: 'gemini'
+};
+
+const LEGACY_AGENT_ALIASES = {
+  oop: 'alpha',
+  procedural: 'beta',
+  functional: 'gamma'
+};
 
 const SERVICE_NAME = 'multiverse-sec';
 
@@ -106,15 +124,49 @@ function readSecret(provider) {
 function deleteSecret(provider) {
   const backend = getBackendMode();
   if (backend === 'keychain') return deleteFromKeychain(provider);
-  try { fs.unlinkSync(getSecretPath(provider)); } catch {}
+  try {
+    fs.unlinkSync(getSecretPath(provider));
+  } catch {}
+}
+
+function defaultAgentSettings() {
+  return Object.fromEntries(
+    IMPLEMENTATION_AGENTS.map((agent) => [agent, { provider: DEFAULT_AGENT_PROVIDER[agent], model: null }])
+  );
+}
+
+export function normalizeAgentId(agent) {
+  return LEGACY_AGENT_ALIASES[agent] ?? agent;
+}
+
+function configuredProviders(config) {
+  return PROVIDERS
+    .map((provider) => provider.id)
+    .filter((provider) => Boolean(config.providers?.[provider]?.configured && getStoredCredential(provider)));
 }
 
 export function loadAuthConfig() {
-  return readJson(getConfigPath(), {
+  const config = readJson(getConfigPath(), {
     defaultProvider: null,
     providers: {},
-    roleProviders: {}
+    agentSettings: defaultAgentSettings()
   });
+
+  config.providers ??= {};
+  config.agentSettings ??= {};
+  for (const [legacyAgent, migratedAgent] of Object.entries(LEGACY_AGENT_ALIASES)) {
+    if (config.agentSettings[legacyAgent] && !config.agentSettings[migratedAgent]) {
+      config.agentSettings[migratedAgent] = config.agentSettings[legacyAgent];
+    }
+    delete config.agentSettings[legacyAgent];
+  }
+  for (const agent of IMPLEMENTATION_AGENTS) {
+    config.agentSettings[agent] = {
+      provider: config.agentSettings[agent]?.provider ?? DEFAULT_AGENT_PROVIDER[agent],
+      model: config.agentSettings[agent]?.model ?? null
+    };
+  }
+  return config;
 }
 
 export function saveAuthConfig(config) {
@@ -123,6 +175,10 @@ export function saveAuthConfig(config) {
 
 export function getProviderMeta(provider) {
   return PROVIDERS.find((item) => item.id === provider) ?? null;
+}
+
+export function getAgentMeta(agent) {
+  return AGENT_META[normalizeAgentId(agent)] ?? null;
 }
 
 export function getStoredCredential(provider) {
@@ -140,8 +196,27 @@ export function listProviderStates() {
     ...provider,
     configured: Boolean(config.providers?.[provider.id]?.configured && getStoredCredential(provider.id)),
     isDefault: config.defaultProvider === provider.id,
-    assignedRoles: AGENT_ROLES.filter((role) => config.roleProviders?.[role] === provider.id)
+    assignedAgents: IMPLEMENTATION_AGENTS.filter((agent) => config.agentSettings?.[agent]?.provider === provider.id)
   }));
+}
+
+export function listAgentStates() {
+  const config = loadAuthConfig();
+  const activeProviders = configuredProviders(config);
+  const forcedProvider = activeProviders.length === 1 ? activeProviders[0] : null;
+  return IMPLEMENTATION_AGENTS.map((agent) => {
+    const preferredProvider = config.agentSettings?.[agent]?.provider ?? DEFAULT_AGENT_PROVIDER[agent];
+    const fallbackProvider = forcedProvider ?? resolveDefaultProvider();
+    const effectiveProvider = forcedProvider || (isProviderConfigured(preferredProvider) ? preferredProvider : fallbackProvider);
+    return {
+      id: agent,
+      ...AGENT_META[agent],
+      provider: preferredProvider,
+      effectiveProvider,
+      model: config.agentSettings?.[agent]?.model ?? null,
+      forcedProvider
+    };
+  });
 }
 
 export function setProviderCredential(provider, secret, makeDefault = false) {
@@ -168,27 +243,67 @@ export function setDefaultProvider(provider) {
   saveAuthConfig(config);
 }
 
-export function assignRoleProvider(role, provider) {
-  if (!AGENT_ROLES.includes(role)) {
-    throw new Error(`지원하지 않는 역할입니다: ${role}`);
+export function assignAgentProvider(agent, provider) {
+  agent = normalizeAgentId(agent);
+  if (!IMPLEMENTATION_AGENTS.includes(agent)) {
+    throw new Error(`지원하지 않는 에이전트입니다: ${agent}`);
   }
   if (!isProviderConfigured(provider)) {
     throw new Error('해당 provider가 연결되어 있지 않습니다.');
   }
   const config = loadAuthConfig();
-  config.roleProviders[role] = provider;
+  config.agentSettings[agent] = {
+    ...config.agentSettings[agent],
+    provider
+  };
   saveAuthConfig(config);
 }
 
-export function clearRoleProvider(role) {
+export function clearAgentProvider(agent) {
+  agent = normalizeAgentId(agent);
+  if (!IMPLEMENTATION_AGENTS.includes(agent)) {
+    throw new Error(`지원하지 않는 에이전트입니다: ${agent}`);
+  }
   const config = loadAuthConfig();
-  delete config.roleProviders[role];
+  config.agentSettings[agent] = {
+    ...config.agentSettings[agent],
+    provider: DEFAULT_AGENT_PROVIDER[agent]
+  };
   saveAuthConfig(config);
 }
 
-export function getRoleAssignments() {
+export function setAgentModel(agent, model) {
+  agent = normalizeAgentId(agent);
+  if (!IMPLEMENTATION_AGENTS.includes(agent)) {
+    throw new Error(`지원하지 않는 에이전트입니다: ${agent}`);
+  }
+  if (!model) {
+    throw new Error('모델 이름이 비어 있습니다.');
+  }
   const config = loadAuthConfig();
-  return { ...config.roleProviders };
+  config.agentSettings[agent] = {
+    ...config.agentSettings[agent],
+    model
+  };
+  saveAuthConfig(config);
+}
+
+export function clearAgentModel(agent) {
+  agent = normalizeAgentId(agent);
+  if (!IMPLEMENTATION_AGENTS.includes(agent)) {
+    throw new Error(`지원하지 않는 에이전트입니다: ${agent}`);
+  }
+  const config = loadAuthConfig();
+  config.agentSettings[agent] = {
+    ...config.agentSettings[agent],
+    model: null
+  };
+  saveAuthConfig(config);
+}
+
+export function getAgentSettings() {
+  const config = loadAuthConfig();
+  return structuredClone(config.agentSettings);
 }
 
 export function resolveDefaultProvider() {
@@ -206,20 +321,28 @@ export function resolveDefaultProvider() {
   return null;
 }
 
-export function resolveProviderForRole(role) {
+export function resolveAgentConfig(agent) {
+  agent = normalizeAgentId(agent);
   const config = loadAuthConfig();
-  const assigned = config.roleProviders?.[role];
-  if (assigned && isProviderConfigured(assigned)) return assigned;
-  return resolveDefaultProvider();
+  const preferredProvider = config.agentSettings?.[agent]?.provider ?? DEFAULT_AGENT_PROVIDER[agent];
+  const activeProviders = configuredProviders(config);
+  const forcedProvider = activeProviders.length === 1 ? activeProviders[0] : null;
+  const provider = forcedProvider || (isProviderConfigured(preferredProvider) ? preferredProvider : resolveDefaultProvider());
+  return {
+    agent,
+    provider,
+    model: config.agentSettings?.[agent]?.model ?? null,
+    forcedProvider
+  };
 }
 
 export function removeProviderCredential(provider) {
   const config = loadAuthConfig();
   deleteSecret(provider);
   delete config.providers[provider];
-  for (const role of AGENT_ROLES) {
-    if (config.roleProviders?.[role] === provider) {
-      delete config.roleProviders[role];
+  for (const agent of IMPLEMENTATION_AGENTS) {
+    if (config.agentSettings?.[agent]?.provider === provider) {
+      config.agentSettings[agent].provider = DEFAULT_AGENT_PROVIDER[agent];
     }
   }
   if (config.defaultProvider === provider) {

@@ -1,7 +1,7 @@
 {
   "name": "multiverse-sec",
   "version": "0.1.0",
-  "description": "AI 협업 보안 코드 생성 데모 CLI",
+  "description": "3개 AI 구현안 합의 기반 로컬 코드 수정 CLI",
   "type": "module",
   "bin": {
     "multiverse-sec": "./src/cli.js"
@@ -9,10 +9,12 @@
   "scripts": {
     "start": "node ./src/cli.js",
     "demo": "node ./src/cli.js",
-    "tmux-demo": "node ./src/cli.js --tmux \"보안이 강화된 login API 만들어줘\"",
     "test": "node ./test/cli.test.js"
   },
   "engines": {
     "node": ">=18"
+  },
+  "dependencies": {
+    "blessed": "^0.1.81"
   }
 }
