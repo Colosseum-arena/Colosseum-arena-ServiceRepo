@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"/opt/homebrew/lib/node_modules/oh-my-codex/dist/scripts/codex-native-hook.js\""
+            "command": "node \"/home/hefxpzwk/.nvm/versions/node/v22.22.2/lib/node_modules/oh-my-codex/dist/scripts/codex-native-hook.js\""
           }
         ]
       }
@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"/opt/homebrew/lib/node_modules/oh-my-codex/dist/scripts/codex-native-hook.js\""
+            "command": "node \"/home/hefxpzwk/.nvm/versions/node/v22.22.2/lib/node_modules/oh-my-codex/dist/scripts/codex-native-hook.js\""
           }
         ]
       }
@@ -27,7 +27,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"/opt/homebrew/lib/node_modules/oh-my-codex/dist/scripts/codex-native-hook.js\""
+            "command": "node \"/home/hefxpzwk/.nvm/versions/node/v22.22.2/lib/node_modules/oh-my-codex/dist/scripts/codex-native-hook.js\""
           }
         ]
       }
@@ -37,7 +37,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"/opt/homebrew/lib/node_modules/oh-my-codex/dist/scripts/codex-native-hook.js\""
+            "command": "node \"/home/hefxpzwk/.nvm/versions/node/v22.22.2/lib/node_modules/oh-my-codex/dist/scripts/codex-native-hook.js\""
           }
         ]
       }
@@ -47,7 +47,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"/opt/homebrew/lib/node_modules/oh-my-codex/dist/scripts/codex-native-hook.js\"",
+            "command": "node \"/home/hefxpzwk/.nvm/versions/node/v22.22.2/lib/node_modules/oh-my-codex/dist/scripts/codex-native-hook.js\"",
             "timeout": 30
           }
         ]
