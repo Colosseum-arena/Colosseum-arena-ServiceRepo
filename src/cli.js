@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { buildDemoScenario } from './demo-data.js';
 
 const color = {
   reset: '\u001b[0m',
@@ -10,53 +11,6 @@ const color = {
   red: '\u001b[31m',
   green: '\u001b[32m',
   magenta: '\u001b[35m'
-};
-
-const scenario = {
-  prompt: '보안이 강화된 login API 만들어줘',
-  proposals: [
-    {
-      agent: 'Architect',
-      idea: '레이어를 분리한 OOP 구조로 로그인 API를 설계하겠습니다.',
-      detail: 'Controller-Service-Repository를 나눠 책임을 분리합니다.'
-    },
-    {
-      agent: 'Red Team',
-      idea: '문자열 결합 쿼리와 인증 누락 가능성을 먼저 의심해야 합니다.',
-      detail: '공격 관점에서 SQL Injection과 brute force 위험을 우선 점검합니다.'
-    },
-    {
-      agent: 'Blue Team',
-      idea: '입력 검증, rate limit, 감사 로그를 최소 보안 기준으로 묶겠습니다.',
-      detail: '패치 우선순위를 낮은 수정 비용 순으로 제안합니다.'
-    }
-  ],
-  debate: [
-    {
-      from: 'Red Team',
-      to: 'Architect',
-      message: 'OOP 구조는 명확하지만 쿼리 레이어가 복잡해지면 취약점이 숨어들 수 있습니다.'
-    },
-    {
-      from: 'Blue Team',
-      to: 'Red Team',
-      message: '그 위험을 줄이기 위해 함수 단위 검증과 파라미터 바인딩을 공통 규칙으로 고정하겠습니다.'
-    },
-    {
-      from: 'Judge',
-      to: 'All',
-      message: '복잡한 구조보다 설명 가능한 보안 흐름이 중요하니 Functional 중심 대안을 채택합시다.'
-    }
-  ],
-  decision: {
-    winner: 'Functional 보안 흐름',
-    summary: '입력 검증 → rate limit → 사용자 조회 → 비밀번호 검증 → 감사 로그 → 토큰 발급',
-    reason: [
-      '각 단계가 분리되어 심사위원이 보안 의도를 바로 이해할 수 있습니다.',
-      'Red Team의 공격 포인트를 Blue Team의 방어 정책으로 바로 연결할 수 있습니다.',
-      'Judge가 최종 선택 이유를 짧고 명확하게 설명할 수 있습니다.'
-    ]
-  }
 };
 
 function paint(text, tone) {
@@ -71,25 +25,73 @@ function logLine(label, text, tone = 'dim') {
   console.log(`${paint(label, tone)} ${text}`);
 }
 
-console.log(paint('Multiverse Secure Demo', 'cyan'));
-console.log(paint('AI 아이디어 제안 → 반박 → 조율 → 최종 합의', 'dim'));
-logLine('Prompt', scenario.prompt, 'magenta');
-
-header('1. 에이전트별 아이디어 제안');
-for (const proposal of scenario.proposals) {
-  logLine(`[${proposal.agent}]`, proposal.idea, 'cyan');
-  logLine('  └', proposal.detail, 'dim');
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-header('2. 에이전트 간 충돌과 조율');
-for (const turn of scenario.debate) {
-  const tone = turn.from === 'Red Team' ? 'red' : turn.from === 'Blue Team' ? 'blue' : 'yellow';
-  logLine(`[${turn.from} → ${turn.to}]`, turn.message, tone);
+function parseArgs(argv) {
+  const args = argv.slice(2);
+  return {
+    help: args.includes('--help') || args.includes('-h'),
+    noDelay: args.includes('--no-delay'),
+    prompt: args.filter((arg) => !arg.startsWith('--')).join(' ').trim()
+  };
 }
 
-header('3. 최종 합의 결과');
-logLine('[Judge]', `${scenario.decision.winner}로 확정`, 'green');
-logLine('합의된 흐름', scenario.decision.summary, 'green');
-for (const reason of scenario.decision.reason) {
-  logLine('  ✓', reason, 'green');
+async function maybePause(noDelay, ms = 220) {
+  if (!noDelay) {
+    await sleep(ms);
+  }
+}
+
+export async function runCli(argv = process.argv) {
+  const { help, noDelay, prompt } = parseArgs(argv);
+
+  if (help) {
+    console.log('사용법: multiverse-sec "요청 내용" [--no-delay]');
+    console.log('예시: multiverse-sec "보안이 강화된 login API 만들어줘"');
+    return 0;
+  }
+
+  const scenario = buildDemoScenario(prompt || '보안이 강화된 login API 만들어줘');
+
+  console.log(paint('Multiverse Secure Demo', 'cyan'));
+  console.log(paint('AI 아이디어 제안 → 반박 → 조율 → 최종 합의', 'dim'));
+  logLine('Prompt', scenario.prompt, 'magenta');
+
+  header('1. 에이전트별 아이디어 제안');
+  for (const proposal of scenario.proposals) {
+    await maybePause(noDelay);
+    logLine(`[${proposal.agent}]`, proposal.idea, 'cyan');
+    logLine('  └', proposal.detail, 'dim');
+  }
+
+  header('2. 에이전트 간 충돌과 조율');
+  for (const turn of scenario.debate) {
+    await maybePause(noDelay);
+    const tone = turn.from === 'Red Team' ? 'red' : turn.from === 'Blue Team' ? 'blue' : 'yellow';
+    logLine(`[${turn.from} → ${turn.to}]`, turn.message, tone);
+  }
+
+  header('3. 최종 합의 결과');
+  await maybePause(noDelay);
+  logLine('[Judge]', `${scenario.decision.winner}로 확정`, 'green');
+  logLine('합의된 흐름', scenario.decision.summary, 'green');
+  for (const reason of scenario.decision.reason) {
+    await maybePause(noDelay, 180);
+    logLine('  ✓', reason, 'green');
+  }
+
+  return 0;
+}
+
+const isDirectRun = process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href;
+if (isDirectRun) {
+  runCli().then((code) => {
+    process.exitCode = code;
+  }).catch((error) => {
+    console.error(paint('CLI 실행 중 오류가 발생했습니다.', 'red'));
+    console.error(error);
+    process.exitCode = 1;
+  });
 }
