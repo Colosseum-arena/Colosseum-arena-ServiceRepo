@@ -16,6 +16,7 @@ import {
   setProviderCredential
 } from './auth.js';
 import { orchestrateWorkspacePatch } from './engine.js';
+import { RunTui } from './tui.js';
 import { applyWorkspaceChanges, buildWorkspaceSnapshot } from './workspace.js';
 import { getDefaultModel } from './providers.js';
 
@@ -77,6 +78,11 @@ export class DashboardTui {
       throw new Error('Dashboard TUI는 TTY 환경에서만 실행할 수 있습니다.');
     }
 
+    this.initScreen();
+    return this.donePromise;
+  }
+
+  initScreen() {
     this.screen = blessed.screen({
       smartCSR: true,
       fullUnicode: true,
@@ -90,21 +96,25 @@ export class DashboardTui {
     this.buildLayout();
     this.bindMenu();
     this.refreshStatus(false);
-    this.log('대시보드 시작: 좌측 메뉴에서 기능을 선택하세요.');
+    if (this.logs.length === 0) {
+      this.log('대시보드 시작: 좌측 메뉴에서 기능을 선택하세요.');
+    } else {
+      this.logBox.setContent(this.logs.join('\n'));
+      this.logBox.setScrollPerc(100);
+    }
     this.screen.render();
-
-    return this.donePromise;
   }
 
   stop(exitCode = 0) {
-    if (!this.screen) {
-      this.done(exitCode);
-      return;
-    }
+    this.disposeScreen();
+    this.done(exitCode);
+  }
+
+  disposeScreen() {
+    if (!this.screen) return;
     const screen = this.screen;
     this.screen = null;
     screen.destroy();
-    this.done(exitCode);
   }
 
   buildLayout() {
@@ -228,6 +238,7 @@ export class DashboardTui {
 
   setBusyIndicator(isBusy) {
     const stateLabel = isBusy ? '{yellow-fg}BUSY{/yellow-fg}' : '{green-fg}READY{/green-fg}';
+    if (!this.screen) return;
     this.header.setContent('{bold}Multiverse Secure Dashboard{/bold}\nCLI 기능을 한 화면에서 설정하고 연속 실행합니다.   상태: ' + stateLabel);
     this.screen.render();
   }
@@ -272,6 +283,7 @@ export class DashboardTui {
     if (withLog) {
       this.log('상태를 새로고침했습니다.');
     }
+    if (!this.screen) return;
     this.screen.render();
   }
 
@@ -280,6 +292,7 @@ export class DashboardTui {
     if (this.logs.length > 300) {
       this.logs = this.logs.slice(-300);
     }
+    if (!this.screen) return;
     this.logBox.setContent(this.logs.join('\n'));
     this.logBox.setScrollPerc(100);
     this.screen.render();
@@ -558,39 +571,30 @@ export class DashboardTui {
       throw new Error('현재 작업 폴더에서 읽을 수 있는 텍스트 파일을 찾지 못했습니다.');
     }
 
-    this.log(`오케스트레이션 시작: ${prompt}`);
+    this.log(`레거시 오케스트레이션 TUI로 전환합니다: ${prompt}`);
     this.log(`모드: ${dryRun ? 'dry-run' : 'apply changes'} | 파일 컨텍스트: ${snapshot.fileCount}`);
     this.log(`에이전트: ${agentConfigs.map((cfg) => `${cfg.agent}=${providerName(cfg.provider)}:${cfg.model || getDefaultModel(cfg.provider)}`).join(', ')}`);
 
-    const result = await orchestrateWorkspacePatch(prompt, snapshot, agentConfigs, {
-      onEvent: (event) => {
-        if (event.type === 'proposal') {
-          const proposal = event.proposal;
-          this.log(`[proposal] ${proposal.agent}: ${proposal.strategy}`);
-          return;
+    this.disposeScreen();
+    const runTui = new RunTui({ prompt, agentConfigs, dryRun });
+    let result;
+    let changedFiles = [];
+    try {
+      runTui.start();
+      result = await orchestrateWorkspacePatch(prompt, snapshot, agentConfigs, {
+        onEvent: (event) => {
+          runTui.handleEvent(event);
         }
-        if (event.type === 'critique') {
-          const critique = event.critique;
-          this.log(`[critique] ${critique.agent} -> ${critique.preferredAgent}`);
-          return;
-        }
-        if (event.type === 'selection') {
-          this.log(`[selection] winner=${event.selection.winner} votes=${JSON.stringify(event.selection.votes)}`);
-          return;
-        }
-        if (event.type === 'final') {
-          this.log(`[final] ${event.finalPatch.summary}`);
-        }
-      }
-    });
-
-    const changedFiles = dryRun ? [] : applyWorkspaceChanges(this.cwd, result.finalPatch.changes);
-
-    this.log(`승자: ${result.selection.winner} (${result.finalPatch.winningStrategy})`);
-    this.log(`${dryRun ? 'Planned changes' : 'Applied changes'}: ${result.finalPatch.changes.length}개`);
-    for (const change of result.finalPatch.changes) {
-      this.log(`- ${change.action}: ${change.path}`);
+      });
+      changedFiles = dryRun ? [] : applyWorkspaceChanges(this.cwd, result.finalPatch.changes);
+      runTui.finish(result, changedFiles);
+    } finally {
+      runTui.dispose();
+      this.initScreen();
     }
+
+    this.log(`레거시 TUI 실행 완료: 승자 ${result.selection.winner} (${result.finalPatch.winningStrategy})`);
+    this.log(`${dryRun ? 'Planned changes' : 'Applied changes'}: ${result.finalPatch.changes.length}개`);
 
     this.lastRun = {
       prompt,
