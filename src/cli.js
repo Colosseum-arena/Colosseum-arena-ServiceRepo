@@ -31,13 +31,44 @@ const ROLE_META = {
 };
 function paint(text, tone) { return `${color[tone] ?? ''}${text}${color.reset}`; }
 
+function normalizeSlashCommand(command) {
+  const aliases = {
+    '/mode': 'mode',
+    '/login': 'login',
+    '/oauth': 'login',
+    '/providers': 'providers',
+    '/use': 'use',
+    '/assign': 'assign',
+    '/unassign': 'unassign',
+    '/logout': 'logout',
+    '/tmux': 'tmux'
+  };
+  return aliases[command] ?? command;
+}
+
 function parseArgs(argv) {
   const args = argv.slice(2);
   const promptParts = [];
   let role = null, sessionName = 'multiverse-sec-demo', promptBase64 = null, provider = null, command = null, apiKey = null, assignRole = null;
+  let slashArgs = [];
+
+  if (args[0]?.startsWith('/')) {
+    command = normalizeSlashCommand(args[0]);
+    slashArgs = args.slice(1);
+    if (command === 'use') provider = slashArgs[0] ?? null;
+    if (command === 'assign') { assignRole = slashArgs[0] ?? null; provider = slashArgs[1] ?? null; }
+    if (command === 'unassign') assignRole = slashArgs[0] ?? null;
+    if (command === 'logout') provider = slashArgs[0] ?? null;
+    if (command === 'login' && slashArgs[0] && !slashArgs[0].startsWith('--')) provider = slashArgs[0];
+    if (command === 'tmux') promptParts.push(...slashArgs.filter((arg) => !arg.startsWith('--')));
+  }
+
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
-    if (['login', 'providers', 'logout', 'use', 'assign', 'unassign'].includes(arg)) {
+    if (arg.startsWith('/')) {
+      continue;
+    }
+    if (['login', 'providers', 'logout', 'use', 'assign', 'unassign', 'mode'].includes(arg) && !command) {
       command = arg;
     } else if (arg === '--role') { role = args[index + 1] ?? null; index += 1;
     } else if (arg === '--assign-role') { assignRole = args[index + 1] ?? null; index += 1;
@@ -47,7 +78,7 @@ function parseArgs(argv) {
     } else if (arg === '--api-key') { apiKey = args[index + 1] ?? null; index += 1;
     } else if (!arg.startsWith('--')) { promptParts.push(arg); }
   }
-  return { help: args.includes('--help') || args.includes('-h'), noDelay: args.includes('--no-delay'), tmux: args.includes('--tmux'), noAttach: args.includes('--no-attach'), role, assignRole, sessionName, promptBase64, prompt: promptParts.join(' ').trim(), provider, command, apiKey };
+  return { help: args.includes('--help') || args.includes('-h'), noDelay: args.includes('--no-delay'), tmux: args.includes('--tmux') || command === 'tmux', noAttach: args.includes('--no-attach'), role, assignRole, sessionName, promptBase64, prompt: promptParts.join(' ').trim(), provider, command, apiKey };
 }
 
 function sleep(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
@@ -150,6 +181,20 @@ function launchTmuxDashboard({ sessionName, prompt, noDelay, noAttach }) {
   }
 }
 
+function printModeGuide() {
+  console.log(paint('Multiverse Secure 모드 안내', 'bold'));
+  console.log('- /login [provider]     : provider 연결을 시작합니다.');
+  console.log('- /oauth [provider]     : /login 별칭입니다.');
+  console.log('- /providers            : 연결된 provider와 역할 매핑을 보여줍니다.');
+  console.log('- /use <provider>       : 기본 provider를 변경합니다.');
+  console.log('- /assign <role> <provider>   : 역할별 provider를 할당합니다.');
+  console.log('- /unassign <role>      : 역할별 provider 할당을 제거합니다.');
+  console.log('- /logout <provider>    : provider 연결을 제거합니다.');
+  console.log('- /tmux <prompt>        : tmux 실분할 데모를 실행합니다.');
+  console.log('');
+  console.log('역할 목록: architect, red, blue, consensus, final');
+}
+
 function printHelp() {
   console.log('사용법:');
   console.log('  multiverse-sec login [--provider openai|claude|gemini]');
@@ -159,6 +204,9 @@ function printHelp() {
   console.log('  multiverse-sec unassign --assign-role architect|red|blue|consensus|final');
   console.log('  multiverse-sec logout --provider openai|claude|gemini');
   console.log('  multiverse-sec --tmux "요청 내용" [--session-name 이름] [--no-delay]');
+  console.log('  multiverse-sec /mode');
+  console.log('  multiverse-sec /login [provider]');
+  console.log('  multiverse-sec /assign <role> <provider>');
   console.log('');
   console.log('옵션:');
   console.log('  --tmux         실제 tmux pane 분할 데모를 실행합니다.');
@@ -202,6 +250,7 @@ export async function runCli(argv = process.argv) {
   const { help, noDelay, prompt, tmux, noAttach, sessionName, role, promptBase64, provider, command, apiKey, assignRole } = parseArgs(argv);
   const decodedPrompt = decodePrompt(prompt, promptBase64);
   if (help) { printHelp(); return 0; }
+  if (command === 'mode') { printModeGuide(); return 0; }
   if (command === 'login') { await runLogin(provider, apiKey); return 0; }
   if (command === 'providers') { printProviders(); return 0; }
   if (command === 'use') { runUse(provider); return 0; }
@@ -217,7 +266,7 @@ export async function runCli(argv = process.argv) {
   console.log(paint(`기본 Provider: ${providerLabel(effectiveProvider)}`, 'dim'));
   console.log(paint(`Prompt: ${scenario.prompt}`, 'dim'));
   console.log();
-  console.log(paint('실제 pane 분할이 필요하면 --tmux 옵션으로 실행하세요.', 'yellow'));
+  console.log(paint('실제 pane 분할이 필요하면 --tmux 옵션 또는 /tmux 를 사용하세요.', 'yellow'));
   console.log(paint(`예시: node ${path.relative(process.cwd(), fileURLToPath(import.meta.url))} --tmux "${scenario.prompt}"`, 'dim'));
   return 0;
 }

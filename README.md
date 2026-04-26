@@ -115,3 +115,28 @@ node ./src/cli.js providers
 ```bash
 node ./src/cli.js unassign --assign-role final
 ```
+
+
+## 단축 실행과 슬래시 명령
+
+### 실행 파일처럼 사용
+한 번만 아래를 실행하면 이후 `node ./src/cli.js` 없이 바로 실행할 수 있습니다.
+```bash
+npm link
+multiverse-sec /mode
+```
+
+### 슬래시 명령 예시
+```bash
+multiverse-sec /mode
+multiverse-sec /login openai
+multiverse-sec /providers
+multiverse-sec /use openai
+multiverse-sec /assign architect claude
+multiverse-sec /assign red gemini
+multiverse-sec /tmux "주문 API 만들어줘"
+```
+
+### 참고
+- `/oauth` 는 `/login` 별칭입니다.
+- 실제로는 provider별 인증 방식이 다르므로 공통 OAuth 자체를 의미하지는 않습니다.
