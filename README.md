@@ -60,3 +60,24 @@ node ./src/cli.js --tmux "결제 API 만들어줘"
 ### 참고
 - 세션만 만들고 바로 붙지 않으려면 `--no-attach`
 - 세션 이름을 바꾸려면 `--session-name my-demo`
+
+
+## 로그인 저장형 인증
+
+### 개요
+- 최초 1회만 provider를 연결하면 다음 실행부터 자동 재사용합니다.
+- 민감한 API 키는 일반 설정 파일이 아니라 안전 저장소에 보관합니다.
+- macOS에서는 기본적으로 Keychain을 사용합니다.
+
+### 명령어
+```bash
+node ./src/cli.js login
+node ./src/cli.js providers
+node ./src/cli.js logout --provider openai
+```
+
+### 동작 방식
+- `login`: OpenAI / Claude / Gemini 중 하나를 선택해 키를 저장
+- `providers`: 현재 연결 상태와 기본 provider 확인
+- `logout`: 특정 provider 연결 제거
+- 일반 실행 / tmux 실행: 저장된 기본 provider를 자동 재사용
