@@ -1,0 +1,10 @@
+타입 (#이슈번호) : 작업 제목
+
+변경 이유를 한두 줄로 간결하게 작성합니다.
+
+Constraint: 필요한 경우만 작성
+Confidence: high
+Scope-risk: narrow
+Directive: 다음 작업자가 주의할 점이 있을 때만 작성
+Tested: 실행한 검증
+Not-tested: 아직 확인하지 못한 항목
