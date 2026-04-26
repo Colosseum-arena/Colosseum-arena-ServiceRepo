@@ -81,3 +81,37 @@ node ./src/cli.js logout --provider openai
 - `providers`: 현재 연결 상태와 기본 provider 확인
 - `logout`: 특정 provider 연결 제거
 - 일반 실행 / tmux 실행: 저장된 기본 provider를 자동 재사용
+
+
+## 다중 provider 연결과 역할별 할당
+
+### 여러 provider 연결
+```bash
+node ./src/cli.js login --provider openai
+node ./src/cli.js login --provider claude
+node ./src/cli.js login --provider gemini
+```
+
+### 기본 provider 변경
+```bash
+node ./src/cli.js use --provider openai
+```
+
+### 역할별 provider 할당
+```bash
+node ./src/cli.js assign --assign-role architect --provider claude
+node ./src/cli.js assign --assign-role red --provider gemini
+node ./src/cli.js assign --assign-role blue --provider openai
+node ./src/cli.js assign --assign-role consensus --provider claude
+node ./src/cli.js assign --assign-role final --provider gemini
+```
+
+### 현재 매핑 확인
+```bash
+node ./src/cli.js providers
+```
+
+### 역할 할당 제거
+```bash
+node ./src/cli.js unassign --assign-role final
+```
