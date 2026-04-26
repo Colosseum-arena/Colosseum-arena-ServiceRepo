@@ -9,6 +9,7 @@
   "scripts": {
     "start": "node ./src/cli.js",
     "demo": "node ./src/cli.js",
+    "tmux-demo": "node ./src/cli.js --tmux \"보안이 강화된 login API 만들어줘\"",
     "test": "node ./test/cli.test.js"
   },
   "engines": {

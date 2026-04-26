@@ -38,3 +38,25 @@ npm test
 - Consensus Board에서 어떤 의견이 충돌했고 왜 그 방향으로 확정됐는지 바로 볼 수 있습니다.
 - Final Decision 패널에서 최종 코드 미리보기까지 한 화면에서 확인할 수 있습니다.
 - `--no-delay` 옵션으로 발표 리허설과 테스트를 빠르게 돌릴 수 있습니다.
+
+
+## 실제 tmux 분할 데모
+
+### 실행
+```bash
+npm run tmux-demo
+```
+
+또는
+```bash
+node ./src/cli.js --tmux "결제 API 만들어줘"
+```
+
+### 패널 구성
+- 좌측: Architect / Red Team / Blue Team
+- 우측 상단: Consensus Board
+- 우측 하단: Final Decision
+
+### 참고
+- 세션만 만들고 바로 붙지 않으려면 `--no-attach`
+- 세션 이름을 바꾸려면 `--session-name my-demo`
