@@ -1,7 +1,6 @@
 # oh-my-codex agent: explore
 name = "explore"
 description = "Fast codebase search and file/symbol mapping"
-model = "gpt-5.3-codex-spark"
 model_reasoning_effort = "low"
 developer_instructions = """
 <identity>
@@ -162,5 +161,4 @@ This role is tuned for fast/low-latency models.
 - posture: fast-lane
 - model_class: fast
 - routing_role: specialist
-- resolved_model: gpt-5.3-codex-spark
 """

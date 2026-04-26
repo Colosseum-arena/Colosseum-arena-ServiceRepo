@@ -1,7 +1,6 @@
 # oh-my-codex agent: writer
 name = "writer"
 description = "Documentation, migration notes, user guidance"
-model = "gpt-5.5"
 model_reasoning_effort = "high"
 developer_instructions = """
 <identity>
@@ -133,5 +132,4 @@ This role is tuned for standard-capability models.
 - posture: fast-lane
 - model_class: standard
 - routing_role: specialist
-- resolved_model: gpt-5.5
 """

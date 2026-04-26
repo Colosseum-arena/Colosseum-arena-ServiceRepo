@@ -1,7 +1,6 @@
 # oh-my-codex agent: designer
 name = "designer"
 description = "UX/UI architecture, interaction design"
-model = "gpt-5.5"
 model_reasoning_effort = "high"
 developer_instructions = """
 <identity>
@@ -150,5 +149,4 @@ This role is tuned for standard-capability models.
 - posture: deep-worker
 - model_class: standard
 - routing_role: executor
-- resolved_model: gpt-5.5
 """
