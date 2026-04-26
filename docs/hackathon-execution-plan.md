@@ -95,8 +95,8 @@ B:
 ### 1. 초기 설정
 
 ```bash
-node ./src/cli.js login --provider openai
-node ./src/cli.js providers
+multiverse-sec /login openai
+multiverse-sec /providers
 ```
 
 ### 2. 서비스 실행
@@ -111,9 +111,9 @@ multiverse-sec "보안이 강화된 login API 만들어줘"
 - 최종 선택 근거와 결과 코드
 
 ### 4. 실패 시 복구
-- provider 상태 점검: `node ./src/cli.js providers`
-- 기본 provider 전환: `node ./src/cli.js use --provider <name>`
-- 역할별 재할당: `node ./src/cli.js assign --assign-role <role> --provider <name>`
+- provider 상태 점검: `multiverse-sec /providers`
+- 기본 provider 전환: `multiverse-sec /use <name>`
+- 역할별 재할당: `multiverse-sec /assign <role> <name>`
 
 ## 품질 게이트
 - [ ] 동일 입력에 대해 결과 형식이 깨지지 않는다.
