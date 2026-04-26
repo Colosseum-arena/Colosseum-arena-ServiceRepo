@@ -14,13 +14,13 @@ AI 협업 보안 코드 생성 데모용 CLI 저장소입니다.
 
 ### 실행
 ```bash
-npm run demo
+multiverse-sec "보안이 강화된 login API 만들어줘"
 ```
 
-### 직접 프롬프트 실행
+### 명시적 run 명령
 ```bash
-node ./src/cli.js "보안이 강화된 login API 만들어줘"
-node ./src/cli.js "회원가입 API 만들어줘" --no-delay
+multiverse-sec run "보안이 강화된 login API 만들어줘"
+multiverse-sec /run "회원가입 API 만들어줘"
 ```
 
 ### 빠른 테스트 실행
@@ -124,6 +124,7 @@ node ./src/cli.js unassign --assign-role final
 ```bash
 npm link
 multiverse-sec /mode
+multiverse-sec "로그인 API 만들어줘"
 ```
 
 ### 슬래시 명령 예시
