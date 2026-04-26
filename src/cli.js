@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
 import { buildDemoScenario } from './demo-data.js';
 
 const color = {
@@ -10,8 +13,15 @@ const color = {
   yellow: '\u001b[33m',
   red: '\u001b[31m',
   green: '\u001b[32m',
-  magenta: '\u001b[35m',
-  gray: '\u001b[90m'
+  magenta: '\u001b[35m'
+};
+
+const ROLE_META = {
+  architect: { tone: 'cyan', title: 'Architect', subtitle: '구조 설계 / API 초안 제안' },
+  red: { tone: 'red', title: 'Red Team', subtitle: '공격 시나리오 / 취약점 지적' },
+  blue: { tone: 'blue', title: 'Blue Team', subtitle: '방어 전략 / 패치 제안' },
+  consensus: { tone: 'yellow', title: 'Consensus Board', subtitle: '의견 충돌 / 조율 / 최종 판정' },
+  final: { tone: 'green', title: 'Final Decision', subtitle: '확정안 / 최종 코드 요약' }
 };
 
 function paint(text, tone) {
@@ -20,208 +30,242 @@ function paint(text, tone) {
 
 function parseArgs(argv) {
   const args = argv.slice(2);
+  const promptParts = [];
+  let role = null;
+  let sessionName = 'multiverse-sec-demo';
+  let promptBase64 = null;
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === '--role') {
+      role = args[index + 1] ?? null;
+      index += 1;
+    } else if (arg === '--session-name') {
+      sessionName = args[index + 1] ?? sessionName;
+      index += 1;
+    } else if (arg === '--prompt-b64') {
+      promptBase64 = args[index + 1] ?? null;
+      index += 1;
+    } else if (!arg.startsWith('--')) {
+      promptParts.push(arg);
+    }
+  }
+
   return {
     help: args.includes('--help') || args.includes('-h'),
     noDelay: args.includes('--no-delay'),
-    prompt: args.filter((arg) => !arg.startsWith('--')).join(' ').trim()
+    tmux: args.includes('--tmux'),
+    noAttach: args.includes('--no-attach'),
+    role,
+    sessionName,
+    promptBase64,
+    prompt: promptParts.join(' ').trim()
   };
-}
-
-function visibleWidth(text) {
-  return text.replace(/\u001b\[[0-9;]*m/g, '').length;
-}
-
-function pad(text, width) {
-  const gap = Math.max(0, width - visibleWidth(text));
-  return text + ' '.repeat(gap);
-}
-
-function wrapText(text, width) {
-  const rawLines = String(text).split('\n');
-  const result = [];
-  for (const rawLine of rawLines) {
-    const words = rawLine.split(' ');
-    let current = '';
-    for (const word of words) {
-      const next = current ? `${current} ${word}` : word;
-      if (visibleWidth(next) <= width) {
-        current = next;
-      } else {
-        if (current) result.push(current);
-        if (visibleWidth(word) <= width) {
-          current = word;
-        } else {
-          let chunk = '';
-          for (const char of word) {
-            if (visibleWidth(chunk + char) > width) {
-              result.push(chunk);
-              chunk = char;
-            } else {
-              chunk += char;
-            }
-          }
-          current = chunk;
-        }
-      }
-    }
-    result.push(current || '');
-  }
-  return result;
-}
-
-function makeBox({ title, subtitle, tone = 'cyan', lines, width }) {
-  const innerWidth = width - 2;
-  const rendered = [];
-  rendered.push(`┌${'─'.repeat(innerWidth)}┐`);
-  rendered.push(`│${pad(paint(title, tone), innerWidth)}│`);
-  rendered.push(`│${pad(paint(subtitle, 'dim'), innerWidth)}│`);
-  rendered.push(`├${'─'.repeat(innerWidth)}┤`);
-  for (const line of lines) {
-    for (const wrapped of wrapText(line, innerWidth)) {
-      rendered.push(`│${pad(wrapped, innerWidth)}│`);
-    }
-  }
-  rendered.push(`└${'─'.repeat(innerWidth)}┘`);
-  return rendered;
-}
-
-function mergeColumns(leftLines, rightLines, gap = 2) {
-  const leftWidth = Math.max(...leftLines.map((line) => visibleWidth(line)), 0);
-  const rows = Math.max(leftLines.length, rightLines.length);
-  const merged = [];
-  for (let index = 0; index < rows; index += 1) {
-    const left = leftLines[index] ?? '';
-    const right = rightLines[index] ?? '';
-    merged.push(`${pad(left, leftWidth)}${' '.repeat(gap)}${right}`.trimEnd());
-  }
-  return merged;
-}
-
-function stackBoxes(boxes) {
-  return boxes.flatMap((box, index) => index === 0 ? box : ['', ...box]);
 }
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function maybePause(noDelay, ms = 220) {
+async function maybePause(noDelay, ms = 280) {
   if (!noDelay) {
     await sleep(ms);
   }
 }
 
-function buildAgentLines(scenario) {
-  const architect = scenario.proposals.find((item) => item.agent === 'Architect');
-  const red = scenario.proposals.find((item) => item.agent === 'Red Team');
-  const blue = scenario.proposals.find((item) => item.agent === 'Blue Team');
-
-  return {
-    architect: [
-      `현재 작업: ${architect.idea}`,
-      `설계 방향: ${architect.detail}`,
-      '산출물: API 구조/레이어 분리 제안'
-    ],
-    red: [
-      `현재 작업: ${red.idea}`,
-      `공격 포인트: ${red.detail}`,
-      `주요 반박: ${scenario.debate[0].message}`
-    ],
-    blue: [
-      `현재 작업: ${blue.idea}`,
-      `방어 전략: ${blue.detail}`,
-      `대응 방안: ${scenario.debate[1].message}`
-    ]
-  };
+function decodePrompt(prompt, promptBase64) {
+  if (promptBase64) {
+    return Buffer.from(promptBase64, 'base64').toString('utf8');
+  }
+  return prompt || '보안이 강화된 login API 만들어줘';
 }
 
-function renderSplitDashboard(scenario) {
-  const totalWidth = Math.max(112, Number(process.stdout.columns) || 112);
-  const columnGap = 2;
-  const leftWidth = 56;
-  const rightWidth = totalWidth - leftWidth - columnGap;
-  const agentLines = buildAgentLines(scenario);
-
-  const leftColumn = stackBoxes([
-    makeBox({
-      title: '좌상단 | Architect 패널',
-      subtitle: '역할: 구조 설계 / API 초안 제안',
-      tone: 'cyan',
-      lines: agentLines.architect,
-      width: leftWidth
-    }),
-    makeBox({
-      title: '좌중단 | Red Team 패널',
-      subtitle: '역할: 공격 시나리오 / 취약점 지적',
-      tone: 'red',
-      lines: agentLines.red,
-      width: leftWidth
-    }),
-    makeBox({
-      title: '좌하단 | Blue Team 패널',
-      subtitle: '역할: 방어 전략 / 패치 제안',
-      tone: 'blue',
-      lines: agentLines.blue,
-      width: leftWidth
-    })
-  ]);
-
-  const rightColumn = stackBoxes([
-    makeBox({
-      title: '우측 상단 | Consensus Board',
-      subtitle: '역할: AI 의견 충돌 / 조율 / 최종 판정',
-      tone: 'yellow',
-      lines: scenario.debate.map((turn, index) => `${index + 1}. ${turn.from} → ${turn.to}: ${turn.message}`),
-      width: rightWidth
-    }),
-    makeBox({
-      title: '우측 하단 | Final Decision',
-      subtitle: '역할: 확정된 방향과 최종 코드 요약',
-      tone: 'green',
-      lines: [
-        `확정안: ${scenario.decision.winner}`,
-        `합의 흐름: ${scenario.decision.summary}`,
-        '선정 이유:',
-        ...scenario.decision.reason.map((reason) => `- ${reason}`),
-        '최종 코드 미리보기:',
-        '  --- final-code.js ---',
-        ...scenario.finalCode.split('\n').map((line) => `  ${line}`)
-      ],
-      width: rightWidth
-    })
-  ]);
-
-  return mergeColumns(leftColumn, rightColumn, columnGap);
+function printPaneHeader(roleKey, prompt) {
+  const role = ROLE_META[roleKey];
+  const line = '─'.repeat(72);
+  console.log(paint(line, role.tone));
+  console.log(paint(`${role.title} 패널`, role.tone));
+  console.log(paint(`역할: ${role.subtitle}`, 'dim'));
+  console.log(paint(`Prompt: ${prompt}`, 'dim'));
+  console.log(paint(line, role.tone));
 }
 
-function renderLegend() {
-  return [
-    paint('레이아웃 안내', 'bold'),
-    `${paint('좌측', 'cyan')} 각 AI가 자기 역할별로 작업하는 패널`,
-    `${paint('우측', 'yellow')} AI 의견 조율 / 판정 / 최종 결과를 모아보는 패널`
+async function renderRolePane(roleKey, scenario, noDelay) {
+  printPaneHeader(roleKey, scenario.prompt);
+
+  if (roleKey === 'architect') {
+    const architect = scenario.proposals.find((item) => item.agent === 'Architect');
+    console.log(`현재 작업: ${architect.idea}`);
+    await maybePause(noDelay);
+    console.log(`설계 방향: ${architect.detail}`);
+    await maybePause(noDelay);
+    console.log('산출물: API 구조/레이어 분리 제안');
+    await maybePause(noDelay);
+    console.log(paint('상태: 구조 제안 완료, Red Team 검토 대기', 'cyan'));
+    return;
+  }
+
+  if (roleKey === 'red') {
+    const red = scenario.proposals.find((item) => item.agent === 'Red Team');
+    console.log(`현재 작업: ${red.idea}`);
+    await maybePause(noDelay);
+    console.log(`공격 포인트: ${red.detail}`);
+    await maybePause(noDelay);
+    console.log(`주요 반박: ${scenario.debate[0].message}`);
+    await maybePause(noDelay);
+    console.log(paint('상태: 취약점 분석 완료, Blue Team 대응 확인 중', 'red'));
+    return;
+  }
+
+  if (roleKey === 'blue') {
+    const blue = scenario.proposals.find((item) => item.agent === 'Blue Team');
+    console.log(`현재 작업: ${blue.idea}`);
+    await maybePause(noDelay);
+    console.log(`방어 전략: ${blue.detail}`);
+    await maybePause(noDelay);
+    console.log(`대응 방안: ${scenario.debate[1].message}`);
+    await maybePause(noDelay);
+    console.log(paint('상태: 방어안 제시 완료, Judge 판정 대기', 'blue'));
+    return;
+  }
+
+  if (roleKey === 'consensus') {
+    for (const [index, turn] of scenario.debate.entries()) {
+      console.log(`${index + 1}. ${turn.from} → ${turn.to}`);
+      console.log(`   ${turn.message}`);
+      await maybePause(noDelay, 420);
+    }
+    console.log();
+    console.log(paint(`[Judge] ${scenario.decision.winner}로 확정`, 'yellow'));
+    console.log(`합의 흐름: ${scenario.decision.summary}`);
+    return;
+  }
+
+  if (roleKey === 'final') {
+    console.log(`확정안: ${scenario.decision.winner}`);
+    await maybePause(noDelay);
+    console.log('선정 이유:');
+    for (const reason of scenario.decision.reason) {
+      console.log(`- ${reason}`);
+      await maybePause(noDelay, 220);
+    }
+    console.log();
+    console.log('--- final-code.js ---');
+    console.log(scenario.finalCode);
+  }
+}
+
+function shellEscape(value) {
+  return `'${String(value).replace(/'/g, `'\\''`)}'`;
+}
+
+function runTmux(args, options = {}) {
+  const result = spawnSync('tmux', args, {
+    cwd: process.cwd(),
+    encoding: 'utf8',
+    ...options
+  });
+
+  if (result.status !== 0) {
+    throw new Error(result.stderr || result.stdout || `tmux command failed: ${args.join(' ')}`);
+  }
+
+  return result;
+}
+
+function runTmuxAndRead(args) {
+  return runTmux(args).stdout.trim();
+}
+
+function buildPaneCommand(roleKey, prompt, noDelay) {
+  const scriptPath = fileURLToPath(import.meta.url);
+  const promptBase64 = Buffer.from(prompt, 'utf8').toString('base64');
+  const parts = [
+    shellEscape(process.execPath),
+    shellEscape(scriptPath),
+    '--role',
+    shellEscape(roleKey),
+    '--prompt-b64',
+    shellEscape(promptBase64)
   ];
+
+  if (noDelay) {
+    parts.push('--no-delay');
+  }
+
+  parts.push(';', 'printf', shellEscape('\n\n[done] pane completed. Press Ctrl-b d to detach.\n'), ';', 'exec', process.env.SHELL || '/bin/zsh');
+  return parts.join(' ');
+}
+
+function launchTmuxDashboard({ sessionName, prompt, noDelay, noAttach }) {
+  const existing = spawnSync('tmux', ['has-session', '-t', sessionName], { encoding: 'utf8' });
+  if (existing.status === 0) {
+    throw new Error(`tmux session '${sessionName}' 이(가) 이미 존재합니다. 다른 이름을 사용하거나 세션을 종료하세요.`);
+  }
+
+  const architectPane = runTmuxAndRead(['new-session', '-d', '-P', '-F', '#{pane_id}', '-s', sessionName, '-n', 'agents', buildPaneCommand('architect', prompt, noDelay)]);
+  const consensusPane = runTmuxAndRead(['split-window', '-P', '-F', '#{pane_id}', '-h', '-t', architectPane, buildPaneCommand('consensus', prompt, noDelay)]);
+  const redPane = runTmuxAndRead(['split-window', '-P', '-F', '#{pane_id}', '-v', '-t', architectPane, buildPaneCommand('red', prompt, noDelay)]);
+  const bluePane = runTmuxAndRead(['split-window', '-P', '-F', '#{pane_id}', '-v', '-t', architectPane, buildPaneCommand('blue', prompt, noDelay)]);
+  const finalPane = runTmuxAndRead(['split-window', '-P', '-F', '#{pane_id}', '-v', '-t', consensusPane, buildPaneCommand('final', prompt, noDelay)]);
+  runTmux(['select-layout', '-t', `${sessionName}:0`, 'tiled']);
+  runTmux(['select-pane', '-t', architectPane, '-T', 'Architect']);
+  runTmux(['select-pane', '-t', consensusPane, '-T', 'Consensus']);
+  runTmux(['select-pane', '-t', redPane, '-T', 'Red Team']);
+  runTmux(['select-pane', '-t', bluePane, '-T', 'Blue Team']);
+  runTmux(['select-pane', '-t', finalPane, '-T', 'Final Decision']);
+  runTmux(['set-option', '-t', sessionName, 'mouse', 'on']);
+
+  console.log(paint(`tmux 세션 '${sessionName}' 생성 완료`, 'green'));
+  console.log(`붙기: tmux attach -t ${sessionName}`);
+  console.log('패널 구성: 좌측 Architect/Red/Blue, 우측 Consensus/Final');
+
+  if (!noAttach) {
+    const attach = spawnSync('tmux', ['attach-session', '-t', sessionName], { stdio: 'inherit' });
+    if (attach.status !== 0) {
+      throw new Error('tmux attach-session 실행에 실패했습니다.');
+    }
+  }
+}
+
+function printHelp() {
+  console.log('사용법:');
+  console.log('  multiverse-sec "요청 내용" [--no-delay]');
+  console.log('  multiverse-sec --tmux "요청 내용" [--session-name 이름] [--no-delay]');
+  console.log('');
+  console.log('옵션:');
+  console.log('  --tmux         실제 tmux pane 분할 데모를 실행합니다.');
+  console.log('  --no-attach    tmux 세션 생성만 하고 바로 붙지 않습니다.');
+  console.log('  --session-name 생성할 tmux 세션 이름을 지정합니다.');
+  console.log('  --no-delay     패널 출력 지연을 제거합니다.');
 }
 
 export async function runCli(argv = process.argv) {
-  const { help, noDelay, prompt } = parseArgs(argv);
+  const { help, noDelay, prompt, tmux, noAttach, sessionName, role, promptBase64 } = parseArgs(argv);
+  const decodedPrompt = decodePrompt(prompt, promptBase64);
+  const scenario = buildDemoScenario(decodedPrompt);
 
   if (help) {
-    console.log('사용법: multiverse-sec "요청 내용" [--no-delay]');
-    console.log('예시: multiverse-sec "보안이 강화된 login API 만들어줘"');
-    console.log('설명: 좌측은 AI 작업 패널, 우측은 합의/최종 결정 패널을 표시합니다.');
+    printHelp();
     return 0;
   }
 
-  const scenario = buildDemoScenario(prompt || '보안이 강화된 login API 만들어줘');
-  await maybePause(noDelay, 120);
+  if (role) {
+    await renderRolePane(role, scenario, noDelay);
+    return 0;
+  }
+
+  if (tmux) {
+    launchTmuxDashboard({ sessionName, prompt: decodedPrompt, noDelay, noAttach });
+    return 0;
+  }
 
   console.log(paint('Multiverse Secure Demo', 'magenta'));
   console.log(paint('분할형 멀티 에이전트 대시보드', 'bold'));
   console.log(paint(`Prompt: ${scenario.prompt}`, 'dim'));
   console.log();
-  console.log(renderLegend().join('\n'));
-  console.log();
-  console.log(renderSplitDashboard(scenario).join('\n'));
+  console.log(paint('실제 pane 분할이 필요하면 --tmux 옵션으로 실행하세요.', 'yellow'));
+  console.log(paint(`예시: node ${path.relative(process.cwd(), fileURLToPath(import.meta.url))} --tmux "${scenario.prompt}"`, 'dim'));
 
   return 0;
 }
@@ -232,7 +276,7 @@ if (isDirectRun) {
     process.exitCode = code;
   }).catch((error) => {
     console.error(paint('CLI 실행 중 오류가 발생했습니다.', 'red'));
-    console.error(error);
+    console.error(error.message || error);
     process.exitCode = 1;
   });
 }
