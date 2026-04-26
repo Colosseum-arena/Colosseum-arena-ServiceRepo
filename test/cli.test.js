@@ -13,6 +13,11 @@ let result = run(['--help']);
 assert.equal(result.status, 0, result.stderr);
 assert.match(result.stdout, /assign/);
 assert.match(result.stdout, /use/);
+result = run(['/mode']);
+assert.equal(result.status, 0, result.stderr);
+assert.match(result.stdout, /모드 안내/);
+assert.match(result.stdout, /\/oauth/);
+
 
 result = run(['login', '--provider', 'openai', '--api-key', 'test-openai-key'], 'Y\n');
 assert.equal(result.status, 0, result.stderr);
@@ -26,18 +31,18 @@ result = run(['login', '--provider', 'gemini', '--api-key', 'test-gemini-key'], 
 assert.equal(result.status, 0, result.stderr);
 assert.match(result.stdout, /Gemini 연결 완료/);
 
-result = run(['use', '--provider', 'openai']);
+result = run(['/use', 'openai']);
 assert.equal(result.status, 0, result.stderr);
 
-result = run(['assign', '--assign-role', 'architect', '--provider', 'claude']);
+result = run(['/assign', 'architect', 'claude']);
 assert.equal(result.status, 0, result.stderr);
-result = run(['assign', '--assign-role', 'red', '--provider', 'gemini']);
+result = run(['/assign', 'red', 'gemini']);
 assert.equal(result.status, 0, result.stderr);
-result = run(['assign', '--assign-role', 'blue', '--provider', 'openai']);
+result = run(['/assign', 'blue', 'openai']);
 assert.equal(result.status, 0, result.stderr);
-result = run(['assign', '--assign-role', 'consensus', '--provider', 'claude']);
+result = run(['/assign', 'consensus', 'claude']);
 assert.equal(result.status, 0, result.stderr);
-result = run(['assign', '--assign-role', 'final', '--provider', 'gemini']);
+result = run(['/assign', 'final', 'gemini']);
 assert.equal(result.status, 0, result.stderr);
 
 result = run(['providers']);
@@ -77,9 +82,13 @@ assert.match(capture.stdout, /Provider: Gemini/);
 
 spawnSync('tmux', ['kill-session', '-t', sessionName], { encoding: 'utf8' });
 
-result = run(['unassign', '--assign-role', 'final']);
+result = run(['/unassign', 'final']);
 assert.equal(result.status, 0, result.stderr);
-result = run(['logout', '--provider', 'gemini']);
+result = run(['/logout', 'gemini']);
 assert.equal(result.status, 0, result.stderr);
 
 console.log('CLI multi-provider and tmux smoke test passed');
+
+result = run(['/providers']);
+assert.equal(result.status, 0, result.stderr);
+assert.match(result.stdout, /역할별 provider 매핑/);
