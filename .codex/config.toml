@@ -3,10 +3,7 @@ notify = ["node", "/home/hefxpzwk/.nvm/versions/node/v22.22.2/lib/node_modules/o
 model_reasoning_effort = "medium"
 developer_instructions = "You have oh-my-codex installed. AGENTS.md is your orchestration brain and the main orchestration surface. Use skill/keyword routing like $name plus spawned role-specialized subagents for specialized work. Codex native subagents are available via .codex/agents and may be used for independent parallel subtasks within a single session or team pane. Skills are loaded from installed SKILL.md files under .codex/skills, not from native agent TOMLs. Use workflow skills via $name when explicitly invoked or clearly routed by AGENTS.md. Treat installed prompts as narrower internal execution surfaces under AGENTS.md authority, even when user-facing docs prefer $name keywords."
 
-model = "gpt-5.5"
 # oh-my-codex seeded behavioral defaults (uninstall removes unchanged defaults)
-model_context_window = 250000
-model_auto_compact_token_limit = 200000
 # End oh-my-codex seeded behavioral defaults
 
 [features]

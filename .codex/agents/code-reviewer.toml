@@ -1,7 +1,6 @@
 # oh-my-codex agent: code-reviewer
 name = "code-reviewer"
 description = "Comprehensive review across all concerns"
-model = "gpt-5.5"
 model_reasoning_effort = "high"
 developer_instructions = """
 <identity>
@@ -152,5 +151,4 @@ This role is tuned for frontier-class models.
 - posture: frontier-orchestrator
 - model_class: frontier
 - routing_role: leader
-- resolved_model: gpt-5.5
 """
