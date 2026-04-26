@@ -3,7 +3,6 @@ import fs from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { buildDemoScenario } from './demo-data.js';
 import {
   AGENT_ROLES,
   assignRoleProvider,
@@ -19,6 +18,14 @@ import {
   runInteractiveLogin,
   setDefaultProvider
 } from './auth.js';
+import {
+  generateArchitectOutput,
+  generateBlueOutput,
+  generateConsensusOutput,
+  generateFinalOutput,
+  generateRedOutput
+} from './engine.js';
+import { ensureRunDir, readRoleOutput, waitForRoleOutputs, writeRoleOutput } from './run-state.js';
 
 const color = {
   reset: '\u001b[0m', dim: '\u001b[2m', bold: '\u001b[1m', cyan: '\u001b[36m', blue: '\u001b[34m', yellow: '\u001b[33m', red: '\u001b[31m', green: '\u001b[32m', magenta: '\u001b[35m'
@@ -33,26 +40,15 @@ const ROLE_META = {
 function paint(text, tone) { return `${color[tone] ?? ''}${text}${color.reset}`; }
 
 function normalizeSlashCommand(command) {
-  const aliases = {
-    '/mode': 'mode',
-    '/login': 'login',
-    '/oauth': 'login',
-    '/providers': 'providers',
-    '/use': 'use',
-    '/assign': 'assign',
-    '/unassign': 'unassign',
-    '/logout': 'logout',
-    '/tmux': 'tmux'
-  };
+  const aliases = { '/mode': 'mode', '/login': 'login', '/oauth': 'login', '/providers': 'providers', '/use': 'use', '/assign': 'assign', '/unassign': 'unassign', '/logout': 'logout', '/tmux': 'tmux' };
   return aliases[command] ?? command;
 }
 
 function parseArgs(argv) {
   const args = argv.slice(2);
   const promptParts = [];
-  let role = null, sessionName = 'multiverse-sec-demo', promptBase64 = null, provider = null, command = null, apiKey = null, assignRole = null;
+  let role = null, sessionName = 'multiverse-sec-demo', promptBase64 = null, provider = null, command = null, apiKey = null, assignRole = null, runId = null;
   let slashArgs = [];
-
   if (args[0]?.startsWith('/')) {
     command = normalizeSlashCommand(args[0]);
     slashArgs = args.slice(1);
@@ -63,12 +59,9 @@ function parseArgs(argv) {
     if (command === 'login' && slashArgs[0] && !slashArgs[0].startsWith('--')) provider = slashArgs[0];
     if (command === 'tmux') promptParts.push(...slashArgs.filter((arg) => !arg.startsWith('--')));
   }
-
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
-    if (arg.startsWith('/')) {
-      continue;
-    }
+    if (arg.startsWith('/')) continue;
     if (['login', 'providers', 'logout', 'use', 'assign', 'unassign', 'mode'].includes(arg) && !command) {
       command = arg;
     } else if (arg === '--role') { role = args[index + 1] ?? null; index += 1;
@@ -77,9 +70,10 @@ function parseArgs(argv) {
     } else if (arg === '--prompt-b64') { promptBase64 = args[index + 1] ?? null; index += 1;
     } else if (arg === '--provider') { provider = args[index + 1] ?? null; index += 1;
     } else if (arg === '--api-key') { apiKey = args[index + 1] ?? null; index += 1;
+    } else if (arg === '--run-id') { runId = args[index + 1] ?? null; index += 1;
     } else if (!arg.startsWith('--')) { promptParts.push(arg); }
   }
-  return { help: args.includes('--help') || args.includes('-h'), noDelay: args.includes('--no-delay'), tmux: args.includes('--tmux') || command === 'tmux', noAttach: args.includes('--no-attach'), role, assignRole, sessionName, promptBase64, prompt: promptParts.join(' ').trim(), provider, command, apiKey };
+  return { help: args.includes('--help') || args.includes('-h'), noDelay: args.includes('--no-delay'), tmux: args.includes('--tmux') || command === 'tmux', noAttach: args.includes('--no-attach'), role, assignRole, sessionName, promptBase64, prompt: promptParts.join(' ').trim(), provider, command, apiKey, runId };
 }
 
 function sleep(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
@@ -99,51 +93,25 @@ function printPaneHeader(roleKey, prompt, provider) {
   console.log(paint(line, role.tone));
 }
 
-async function renderRolePane(roleKey, scenario, noDelay, provider) {
-  printPaneHeader(roleKey, scenario.prompt, provider);
-  if (roleKey === 'architect') {
-    const item = scenario.proposals.find((x) => x.agent === 'Architect');
-    console.log(`현재 작업: ${item.idea}`); await maybePause(noDelay);
-    console.log(`설계 방향: ${item.detail}`); await maybePause(noDelay);
-    console.log('산출물: API 구조/레이어 분리 제안'); await maybePause(noDelay);
-    console.log(paint('상태: 구조 제안 완료, Red Team 검토 대기', 'cyan')); return;
-  }
-  if (roleKey === 'red') {
-    const item = scenario.proposals.find((x) => x.agent === 'Red Team');
-    console.log(`현재 작업: ${item.idea}`); await maybePause(noDelay);
-    console.log(`공격 포인트: ${item.detail}`); await maybePause(noDelay);
-    console.log(`주요 반박: ${scenario.debate[0].message}`); await maybePause(noDelay);
-    console.log(paint('상태: 취약점 분석 완료, Blue Team 대응 확인 중', 'red')); return;
-  }
-  if (roleKey === 'blue') {
-    const item = scenario.proposals.find((x) => x.agent === 'Blue Team');
-    console.log(`현재 작업: ${item.idea}`); await maybePause(noDelay);
-    console.log(`방어 전략: ${item.detail}`); await maybePause(noDelay);
-    console.log(`대응 방안: ${scenario.debate[1].message}`); await maybePause(noDelay);
-    console.log(paint('상태: 방어안 제시 완료, Judge 판정 대기', 'blue')); return;
-  }
-  if (roleKey === 'consensus') {
-    for (const [index, turn] of scenario.debate.entries()) {
-      console.log(`${index + 1}. ${turn.from} → ${turn.to}`); console.log(`   ${turn.message}`); await maybePause(noDelay, 420);
-    }
-    console.log(); console.log(paint(`[Judge] ${scenario.decision.winner}로 확정`, 'yellow')); console.log(`합의 흐름: ${scenario.decision.summary}`); return;
-  }
-  if (roleKey === 'final') {
-    console.log(`확정안: ${scenario.decision.winner}`); await maybePause(noDelay);
-    console.log('선정 이유:');
-    for (const reason of scenario.decision.reason) { console.log(`- ${reason}`); await maybePause(noDelay, 220); }
-    console.log(); console.log('--- final-code.js ---'); console.log(scenario.finalCode);
-  }
-}
-
 function shellEscape(value) { return `'${String(value).replace(/'/g, `'\\''`)}'`; }
 function runTmux(args, options = {}) { const result = spawnSync('tmux', args, { cwd: process.cwd(), encoding: 'utf8', ...options }); if (result.status !== 0) throw new Error(result.stderr || result.stdout || `tmux command failed: ${args.join(' ')}`); return result; }
 function runTmuxAndRead(args) { return runTmux(args).stdout.trim(); }
 
-function buildPaneCommand(roleKey, prompt, noDelay, provider) {
+function buildPaneCommand(roleKey, prompt, noDelay, provider, runId) {
   const scriptPath = fileURLToPath(import.meta.url);
   const promptBase64 = Buffer.from(prompt, 'utf8').toString('base64');
-  const parts = [shellEscape(process.execPath), shellEscape(scriptPath), '--role', shellEscape(roleKey), '--prompt-b64', shellEscape(promptBase64), '--provider', shellEscape(provider)];
+  const envPrefixes = [
+    'MULTIVERSE_SEC_CONFIG_DIR',
+    'MULTIVERSE_SEC_TEST_SECRET_BACKEND',
+    'MULTIVERSE_SEC_OPENAI_BASE_URL',
+    'MULTIVERSE_SEC_CLAUDE_BASE_URL',
+    'MULTIVERSE_SEC_GEMINI_BASE_URL',
+    'MULTIVERSE_SEC_OPENAI_MODEL',
+    'MULTIVERSE_SEC_CLAUDE_MODEL',
+    'MULTIVERSE_SEC_GEMINI_MODEL',
+    'MULTIVERSE_SEC_RUNS_DIR'
+  ].filter((key) => process.env[key]).map((key) => `${key}=${shellEscape(process.env[key])}`);
+  const parts = [...envPrefixes, shellEscape(process.execPath), shellEscape(scriptPath), '--role', shellEscape(roleKey), '--prompt-b64', shellEscape(promptBase64), '--provider', shellEscape(provider), '--run-id', shellEscape(runId)];
   if (noDelay) parts.push('--no-delay');
   parts.push(';', 'printf', shellEscape('\n\n[done] pane completed. Press Ctrl-b d to detach.\n'), ';', 'exec', process.env.SHELL || '/bin/zsh');
   return parts.join(' ');
@@ -153,6 +121,8 @@ function launchTmuxDashboard({ sessionName, prompt, noDelay, noAttach }) {
   const existing = spawnSync('tmux', ['has-session', '-t', sessionName], { encoding: 'utf8' });
   if (existing.status === 0) throw new Error(`tmux session '${sessionName}' 이(가) 이미 존재합니다. 다른 이름을 사용하거나 세션을 종료하세요.`);
 
+  const runId = sessionName;
+  ensureRunDir(runId);
   const providersByRole = {
     architect: roleProvider('architect'),
     red: roleProvider('red'),
@@ -160,11 +130,18 @@ function launchTmuxDashboard({ sessionName, prompt, noDelay, noAttach }) {
     consensus: roleProvider('consensus'),
     final: roleProvider('final')
   };
-  const architectPane = runTmuxAndRead(['new-session', '-d', '-P', '-F', '#{pane_id}', '-s', sessionName, '-n', 'agents', buildPaneCommand('architect', prompt, noDelay, providersByRole.architect)]);
-  const consensusPane = runTmuxAndRead(['split-window', '-P', '-F', '#{pane_id}', '-h', '-t', architectPane, buildPaneCommand('consensus', prompt, noDelay, providersByRole.consensus)]);
-  const redPane = runTmuxAndRead(['split-window', '-P', '-F', '#{pane_id}', '-v', '-t', architectPane, buildPaneCommand('red', prompt, noDelay, providersByRole.red)]);
-  const bluePane = runTmuxAndRead(['split-window', '-P', '-F', '#{pane_id}', '-v', '-t', architectPane, buildPaneCommand('blue', prompt, noDelay, providersByRole.blue)]);
-  const finalPane = runTmuxAndRead(['split-window', '-P', '-F', '#{pane_id}', '-v', '-t', consensusPane, buildPaneCommand('final', prompt, noDelay, providersByRole.final)]);
+
+  for (const [role, provider] of Object.entries(providersByRole)) {
+    if (!getStoredCredential(provider)) {
+      throw new Error(`${role} 역할에 할당된 provider(${provider}) credential이 없습니다.`);
+    }
+  }
+
+  const architectPane = runTmuxAndRead(['new-session', '-d', '-P', '-F', '#{pane_id}', '-s', sessionName, '-n', 'agents', buildPaneCommand('architect', prompt, noDelay, providersByRole.architect, runId)]);
+  const consensusPane = runTmuxAndRead(['split-window', '-P', '-F', '#{pane_id}', '-h', '-t', architectPane, buildPaneCommand('consensus', prompt, noDelay, providersByRole.consensus, runId)]);
+  const redPane = runTmuxAndRead(['split-window', '-P', '-F', '#{pane_id}', '-v', '-t', architectPane, buildPaneCommand('red', prompt, noDelay, providersByRole.red, runId)]);
+  const bluePane = runTmuxAndRead(['split-window', '-P', '-F', '#{pane_id}', '-v', '-t', architectPane, buildPaneCommand('blue', prompt, noDelay, providersByRole.blue, runId)]);
+  const finalPane = runTmuxAndRead(['split-window', '-P', '-F', '#{pane_id}', '-v', '-t', consensusPane, buildPaneCommand('final', prompt, noDelay, providersByRole.final, runId)]);
   runTmux(['select-layout', '-t', `${sessionName}:0`, 'tiled']);
   runTmux(['select-pane', '-t', architectPane, '-T', 'Architect']);
   runTmux(['select-pane', '-t', consensusPane, '-T', 'Consensus']);
@@ -247,8 +224,93 @@ function runAssign(role, provider) { if (!role || !provider) throw new Error('as
 function runUnassign(role) { if (!role) throw new Error('unassign에는 --assign-role 이 필요합니다.'); clearRoleProvider(role); console.log(paint(`${role} 역할 할당을 제거했습니다.`, 'green')); }
 function runLogout(provider) { if (!provider) throw new Error('logout에는 --provider 가 필요합니다.'); if (!getStoredCredential(provider)) throw new Error('해당 provider는 현재 연결되어 있지 않습니다.'); removeProviderCredential(provider); console.log(paint(`${providerLabel(provider)} 연결을 제거했습니다.`, 'green')); }
 
+async function runRole(role, prompt, provider, noDelay, runId) {
+  if (!provider || !getStoredCredential(provider)) {
+    throw new Error(`${role} 역할에 사용할 provider credential이 없습니다.`);
+  }
+  printPaneHeader(role, prompt, provider);
+
+  if (role === 'architect') {
+    console.log(paint('실제 API 호출 중...', 'cyan'));
+    const output = await generateArchitectOutput(provider, prompt);
+    writeRoleOutput(runId, 'architect', output);
+    console.log(`현재 작업: ${output.idea}`);
+    await maybePause(noDelay);
+    console.log(`설계 방향: ${output.detail}`);
+    await maybePause(noDelay);
+    console.log(`산출물: ${output.deliverable}`);
+    await maybePause(noDelay);
+    console.log(paint(`상태: ${output.status}`, 'cyan'));
+    return;
+  }
+
+  if (role === 'red') {
+    const [architect] = await waitForRoleOutputs(runId, ['architect']);
+    console.log(paint('Architect 결과 기반으로 API 호출 중...', 'red'));
+    const output = await generateRedOutput(provider, prompt, architect);
+    writeRoleOutput(runId, 'red', output);
+    console.log(`현재 작업: ${output.idea}`);
+    await maybePause(noDelay);
+    console.log(`공격 포인트: ${output.detail}`);
+    await maybePause(noDelay);
+    console.log(`주요 반박: ${output.challenge}`);
+    await maybePause(noDelay);
+    console.log(paint(`상태: ${output.status}`, 'red'));
+    return;
+  }
+
+  if (role === 'blue') {
+    const [architect, red] = await waitForRoleOutputs(runId, ['architect', 'red']);
+    console.log(paint('Architect/Red 결과 기반으로 API 호출 중...', 'blue'));
+    const output = await generateBlueOutput(provider, prompt, architect, red);
+    writeRoleOutput(runId, 'blue', output);
+    console.log(`현재 작업: ${output.idea}`);
+    await maybePause(noDelay);
+    console.log(`방어 전략: ${output.detail}`);
+    await maybePause(noDelay);
+    console.log(`대응 방안: ${output.response}`);
+    await maybePause(noDelay);
+    console.log(paint(`상태: ${output.status}`, 'blue'));
+    return;
+  }
+
+  if (role === 'consensus') {
+    const [architect, red, blue] = await waitForRoleOutputs(runId, ['architect', 'red', 'blue']);
+    console.log(paint('세 역할의 결과를 모아 API 호출 중...', 'yellow'));
+    const output = await generateConsensusOutput(provider, prompt, architect, red, blue);
+    writeRoleOutput(runId, 'consensus', output);
+    for (const [index, turn] of output.turns.entries()) {
+      console.log(`${index + 1}. ${turn.from} → ${turn.to}`);
+      console.log(`   ${turn.message}`);
+      await maybePause(noDelay, 350);
+    }
+    console.log();
+    console.log(paint(`[Judge] ${output.winner}로 확정`, 'yellow'));
+    console.log(`합의 흐름: ${output.summary}`);
+    return;
+  }
+
+  if (role === 'final') {
+    const [architect, red, blue, consensus] = await waitForRoleOutputs(runId, ['architect', 'red', 'blue', 'consensus']);
+    console.log(paint('최종 코드 생성을 위해 API 호출 중...', 'green'));
+    const output = await generateFinalOutput(provider, prompt, architect, red, blue, consensus);
+    writeRoleOutput(runId, 'final', output);
+    console.log(`확정안: ${output.winner}`);
+    await maybePause(noDelay);
+    console.log(`합의 흐름: ${output.summary}`);
+    console.log('선정 이유:');
+    for (const reason of output.reasons) {
+      console.log(`- ${reason}`);
+      await maybePause(noDelay, 200);
+    }
+    console.log();
+    console.log('--- final-code.js ---');
+    console.log(output.finalCode);
+  }
+}
+
 export async function runCli(argv = process.argv) {
-  const { help, noDelay, prompt, tmux, noAttach, sessionName, role, promptBase64, provider, command, apiKey, assignRole } = parseArgs(argv);
+  const { help, noDelay, prompt, tmux, noAttach, sessionName, role, promptBase64, provider, command, apiKey, assignRole, runId } = parseArgs(argv);
   const decodedPrompt = decodePrompt(prompt, promptBase64);
   if (help) { printHelp(); return 0; }
   if (command === 'mode') { printModeGuide(); return 0; }
@@ -258,17 +320,23 @@ export async function runCli(argv = process.argv) {
   if (command === 'assign') { runAssign(assignRole, provider); return 0; }
   if (command === 'unassign') { runUnassign(assignRole); return 0; }
   if (command === 'logout') { runLogout(provider); return 0; }
+
   const effectiveProvider = role ? roleProvider(role, provider) : await ensureAuthenticatedOnboarding();
-  const scenario = buildDemoScenario(decodedPrompt);
-  if (role) { await renderRolePane(role, scenario, noDelay, effectiveProvider); return 0; }
-  if (tmux) { launchTmuxDashboard({ sessionName, prompt: decodedPrompt, noDelay, noAttach }); return 0; }
+  if (role) {
+    await runRole(role, decodedPrompt, effectiveProvider, noDelay, runId || 'local-run');
+    return 0;
+  }
+  if (tmux) {
+    launchTmuxDashboard({ sessionName, prompt: decodedPrompt, noDelay, noAttach });
+    return 0;
+  }
   console.log(paint('Multiverse Secure Demo', 'magenta'));
-  console.log(paint('분할형 멀티 에이전트 대시보드', 'bold'));
+  console.log(paint('실제 엔진이 연결된 tmux 멀티 에이전트 실행기', 'bold'));
   console.log(paint(`기본 Provider: ${providerLabel(effectiveProvider)}`, 'dim'));
-  console.log(paint(`Prompt: ${scenario.prompt}`, 'dim'));
+  console.log(paint(`Prompt: ${decodedPrompt}`, 'dim'));
   console.log();
-  console.log(paint('실제 pane 분할이 필요하면 --tmux 옵션 또는 /tmux 를 사용하세요.', 'yellow'));
-  console.log(paint(`예시: node ${path.relative(process.cwd(), fileURLToPath(import.meta.url))} --tmux "${scenario.prompt}"`, 'dim'));
+  console.log(paint('실제 실행은 /tmux 또는 --tmux 로 시작하세요.', 'yellow'));
+  console.log(paint(`예시: multiverse-sec /tmux "${decodedPrompt}"`, 'dim'));
   return 0;
 }
 

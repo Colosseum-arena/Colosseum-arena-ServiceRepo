@@ -140,3 +140,25 @@ multiverse-sec /tmux "주문 API 만들어줘"
 ### 참고
 - `/oauth` 는 `/login` 별칭입니다.
 - 실제로는 provider별 인증 방식이 다르므로 공통 OAuth 자체를 의미하지는 않습니다.
+
+
+## 실제 provider API 호출
+
+이제 tmux 실행 시 mock 텍스트가 아니라 역할별 provider에 실제 API 요청을 보냅니다.
+
+- Architect / Red / Blue는 각자 할당된 provider로 실제 역할 응답을 생성합니다.
+- Consensus는 세 역할의 결과를 모아 실제 합의 응답을 생성합니다.
+- Final은 합의 결과를 기반으로 최종 코드 초안을 생성합니다.
+
+### provider 기본 모델
+- OpenAI: `gpt-4.1-mini`
+- Claude: `claude-sonnet-4-5`
+- Gemini: `gemini-2.5-flash`
+
+### 모델 변경
+환경 변수로 바꿀 수 있습니다.
+```bash
+export MULTIVERSE_SEC_OPENAI_MODEL=gpt-5-mini
+export MULTIVERSE_SEC_CLAUDE_MODEL=claude-sonnet-4-5
+export MULTIVERSE_SEC_GEMINI_MODEL=gemini-2.5-flash
+```
