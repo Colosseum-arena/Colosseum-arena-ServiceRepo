@@ -43,6 +43,16 @@ export function buildDemoScenario(request) {
         'Red Team의 공격 포인트를 Blue Team의 방어 정책으로 바로 연결할 수 있습니다.',
         'Judge가 최종 선택 이유를 짧고 명확하게 설명할 수 있습니다.'
       ]
-    }
+    },
+    finalCode: [
+      'export async function loginHandler(req, res) {',
+      '  const payload = validateLoginInput(req.body);',
+      '  await enforceRateLimit(payload.email);',
+      '  const user = await findUserByEmail(payload.email);',
+      '  await assertPasswordMatches(payload.password, user.passwordHash);',
+      '  await writeAuditLog({ type: "LOGIN_SUCCESS", email: payload.email });',
+      '  return res.json(issueAccessToken(user.id));',
+      '}'
+    ].join('\n')
   };
 }

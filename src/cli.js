@@ -82,6 +82,13 @@ export async function runCli(argv = process.argv) {
     logLine('  ✓', reason, 'green');
   }
 
+  header('4. 최종 코드 결과');
+  await maybePause(noDelay);
+  logLine('[Final Code]', '최종 보안 코드가 확정되었습니다.', 'green');
+  console.log();
+  console.log(paint('--- final-code.js ---', 'bold'));
+  console.log(scenario.finalCode);
+
   return 0;
 }
 
