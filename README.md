@@ -31,6 +31,34 @@ npm link
 
 설치 후 `multiverse-sec` 명령을 사용할 수 있습니다.
 
+## 릴리스 다운로드
+
+최신 안정 버전은 GitHub Releases에서 바로 받을 수 있습니다.
+
+- 릴리스 페이지: https://github.com/Colosseum-arena/Colosseum-arena-ServiceRepo/releases
+- `v0.1.0` 바로가기: https://github.com/Colosseum-arena/Colosseum-arena-ServiceRepo/releases/tag/v0.1.0
+
+브라우저에서 받기:
+
+1. 위 릴리스 페이지에서 원하는 버전을 엽니다.
+2. `Assets`의 `Source code (zip)` 또는 `Source code (tar.gz)`를 다운로드합니다.
+3. 압축 해제 후 프로젝트 폴더에서 아래를 실행합니다.
+
+```bash
+npm install
+npm link
+```
+
+CLI로 받기(`gh` 설치 시):
+
+```bash
+gh release download v0.1.0 --repo Colosseum-arena/Colosseum-arena-ServiceRepo --archive zip
+unzip colosseum-arena-servicerepo-0.1.0.zip
+cd Colosseum-arena-ServiceRepo-0.1.0
+npm install
+npm link
+```
+
 ## 지원 provider
 
 - `codex`
