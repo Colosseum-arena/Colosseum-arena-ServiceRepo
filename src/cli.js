@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import fs from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -271,7 +272,7 @@ export async function runCli(argv = process.argv) {
   return 0;
 }
 
-const isDirectRun = process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href;
+const isDirectRun = process.argv[1] && fs.realpathSync.native(fileURLToPath(import.meta.url)) === fs.realpathSync.native(path.resolve(process.argv[1]));
 if (isDirectRun) {
   runCli().then((code) => { process.exitCode = code; }).catch((error) => {
     console.error(paint('CLI 실행 중 오류가 발생했습니다.', 'red'));
